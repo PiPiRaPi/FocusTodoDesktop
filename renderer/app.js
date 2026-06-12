@@ -66,6 +66,7 @@ const POMO_PHASES = [
 let pomoState    = 'idle';  // idle | focus | overtime | break
 let pomoRunning  = false;
 let pomoTimer    = null;
+let pomoPhaseTimeout = null;  // 精确阶段转换定时器
 let pomoRemaining = FOCUS_TOTAL;
 let pomoOT       = 0;       // 加时秒数
 let pomoBreak    = 5 * 60;
@@ -473,20 +474,12 @@ function renderPomo() {
   renderPomoEntry();
   // 同步状态到独立专注窗口
   if (focusMode) syncToFocusWindow();
-  // 检查倒计时结束
+  // 兜底检查（正常情况下由 schedulePhaseTransition 精确触发）
   if (pomoState === 'focus' && pomoRunning) {
-    const remain = pomoComputeRemaining();
-    if (remain <= 0) { pomoEnterOvertime(); }
+    if (pomoComputeRemaining() <= 0) { pomoEnterOvertime(); }
   }
   if (pomoState === 'break' && pomoRunning) {
-    const remain = pomoComputeRemaining();
-    if (remain <= 0) {
-      clearInterval(pomoTimer); pomoTimer = null;
-      playSound(440,880,.6);
-      window.focusAPI.notify({title:'休息结束',body:'可以开始下一轮了'});
-      pomoState='idle'; pomoRunning=false; pomoRemaining=FOCUS_TOTAL;
-      exitFocusMode(); renderAll();
-    }
+    if (pomoComputeRemaining() <= 0) { finishBreak(); }
   }
 }
 
@@ -527,8 +520,39 @@ function exitFocusMode() {
   renderPomoEntry();
 }
 
+// ── 精确阶段转换定时器（解决 setInterval 延迟导致卡 00:00 的问题）─────────
+function clearPhaseTimeout() {
+  if (pomoPhaseTimeout) { clearTimeout(pomoPhaseTimeout); pomoPhaseTimeout = null; }
+}
+function schedulePhaseTransition() {
+  clearPhaseTimeout();
+  if (!pomoRunning) return;
+  if (pomoState === 'focus') {
+    const remain = pomoComputeRemaining();
+    if (remain <= 0) { pomoEnterOvertime(); return; }
+    // 精确到 remain 归零的时刻触发
+    pomoPhaseTimeout = setTimeout(() => {
+      if (pomoState === 'focus' && pomoRunning) pomoEnterOvertime();
+    }, Math.ceil(remain * 1000) + 20);
+  } else if (pomoState === 'break') {
+    const remain = pomoComputeRemaining();
+    if (remain <= 0) { finishBreak(); return; }
+    pomoPhaseTimeout = setTimeout(() => {
+      if (pomoState === 'break' && pomoRunning) finishBreak();
+    }, Math.ceil(remain * 1000) + 20);
+  }
+}
+function finishBreak() {
+  clearInterval(pomoTimer); pomoTimer = null; clearPhaseTimeout();
+  playSound(440,880,.6);
+  window.focusAPI.notify({title:'休息结束',body:'可以开始下一轮了'});
+  pomoState='idle'; pomoRunning=false; pomoRemaining=FOCUS_TOTAL;
+  exitFocusMode(); renderAll();
+}
+
 // 番茄钟核心
 function pomoEnterOvertime() {
+  clearPhaseTimeout();
   pomoState='overtime'; pomoOT=0; pomoRunning=true; pomoStartTime=Date.now();
   pomoRemaining = 0;
   playSound(440,880,.8);
@@ -538,7 +562,7 @@ function pomoEnterOvertime() {
   pomoTimer=setInterval(()=>renderPomo(), 500);
 }
 async function pomoFinish(overtimeSec) {
-  if(pomoTimer)clearInterval(pomoTimer); pomoTimer=null;
+  if(pomoTimer)clearInterval(pomoTimer); pomoTimer=null; clearPhaseTimeout();
   const ot = typeof overtimeSec === 'number' ? overtimeSec : Math.floor(pomoComputeRemaining());
   state.pomodoroSessions.push({id:crypto.randomUUID(),date:todayKey(),category:pomoCategory,minutes:25,overtimeSeconds:Math.max(0,ot)});
   if(pomoTaskId){const t=state.tasks.find(x=>x.id===pomoTaskId);if(t){t.completedPomodoros=(t.completedPomodoros||0)+1;t.updatedAt=todayKey();}}
@@ -550,6 +574,7 @@ async function pomoFinish(overtimeSec) {
   playSound(659,523,.8);
   if(pomoTimer)clearInterval(pomoTimer);
   pomoTimer=setInterval(()=>renderPomo(), 500);
+  schedulePhaseTransition();
 }
 function pomoStart() {
   if(pomoRunning)return;
@@ -558,12 +583,14 @@ function pomoStart() {
     if(pomoRemaining===FOCUS_TOTAL)playSound(440,440,.4);
     if(pomoTimer)clearInterval(pomoTimer);
     pomoTimer=setInterval(()=>renderPomo(), 500);
+    schedulePhaseTransition();
     enterFocusMode();
     window.focusAPI.focusSetTop(true);
   } else if(pomoState==='break'){
     pomoRunning=true; pomoStartTime=Date.now();
     if(pomoTimer)clearInterval(pomoTimer);
     pomoTimer=setInterval(()=>renderPomo(), 500);
+    schedulePhaseTransition();
     enterFocusMode();
     window.focusAPI.focusSetTop(true);
   }
@@ -572,6 +599,7 @@ function pomoStart() {
 function pomoPause() {
   if(!pomoRunning&&pomoState!=='overtime')return;
   pomoRunning=false;
+  clearPhaseTimeout();
   // 保存当前的剩余时间（时间戳方式：精确计算当前剩余）
   if(pomoState==='focus') pomoRemaining = Math.max(0, pomoComputeRemaining());
   if(pomoState==='break') pomoBreak = Math.max(0, pomoComputeRemaining());
@@ -580,6 +608,7 @@ function pomoPause() {
   exitFocusMode(); renderPomo();
 }
 function pomoReset() {
+  clearPhaseTimeout();
   if(pomoTimer)clearInterval(pomoTimer); pomoTimer=null;
   pomoState='idle'; pomoRunning=false; pomoRemaining=FOCUS_TOTAL; pomoOT=0; pomoBreak=5*60;
   exitFocusMode(); renderPomo();
