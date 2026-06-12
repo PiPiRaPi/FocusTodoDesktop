@@ -1,0 +1,31 @@
+{
+  "name": "focus-todo-desktop",
+  "version": "2.0.0",
+  "description": "四象限任务管理 + 番茄钟桌面应用 — 为妈妈量身定制的效率工具",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.focustodo.desktop",
+    "productName": "FocusTodoDesktop",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": null
+    }
+  },
+  "keywords": ["pomodoro", "todo", "task-manager", "electron", "productivity"],
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}

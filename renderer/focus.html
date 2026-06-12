@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>专注中…</title>
+<link rel="stylesheet" href="animal-island.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:transparent;font-family:var(--animal-font-family)}
+body{
+  display:flex;align-items:center;justify-content:center;
+  background:transparent;
+  -webkit-app-region:drag;
+}
+.focus-card{
+  background:linear-gradient(135deg,#1a7a73,#19c8b9 40%,#0ea99b);
+  border-radius:20px;
+  padding:28px 24px 20px;
+  color:#fff;
+  width:360px;
+  box-shadow:0 8px 0 0 #0a6860, 0 8px 32px rgba(61,52,40,.18);
+  border:2px solid rgba(255,255,255,.2);
+  -webkit-app-region:no-drag;
+}
+.focus-title{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:12px;
+  font-size:13px;
+}
+.focus-time{
+  font-size:68px;font-weight:900;text-align:center;
+  letter-spacing:2px;cursor:pointer;user-select:none;
+  margin:8px 0 12px;font-variant-numeric:tabular-nums;
+  transition:color .3s;
+}
+.focus-time.overtime{color:#fbbf24}
+.focus-time.break{color:#4ade80}
+.focus-timeline{
+  display:flex;gap:2px;height:22px;border-radius:8px;
+  overflow:hidden;margin-bottom:14px;
+}
+.focus-row{
+  display:grid;grid-template-columns:1fr 1fr;gap:8px;
+  margin-bottom:12px;
+}
+.focus-select{
+  background:rgba(255,255,255,.15);color:#fff;
+  border:none;border-radius:12px;padding:7px 10px;
+  font-size:12px;font-family:inherit;cursor:pointer;
+  outline:none;appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(255,255,255,.5)'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center;
+  padding-right:28px;
+}
+.focus-select option{color:#333;background:#fff}
+.focus-btns{display:flex;gap:8px;margin-bottom:10px}
+.focus-btn{
+  padding:12px;font-size:14px;font-weight:700;border:none;
+  border-radius:14px;cursor:pointer;font-family:inherit;
+  transition:transform .1s,box-shadow .1s;
+}
+.focus-btn:active{transform:translateY(2px)}
+.focus-btn-start{
+  flex:3;background:rgba(255,255,255,.92);color:#4f46e5;
+  box-shadow:0 4px 0 0 rgba(0,0,0,.15);
+}
+.focus-btn-pause{
+  flex:3;background:rgba(255,255,255,.25);color:#fff;
+  box-shadow:0 4px 0 0 rgba(0,0,0,.1);
+}
+.focus-btn-finish{
+  flex:3;background:rgba(34,197,94,.85);color:#fff;
+  box-shadow:0 4px 0 0 rgba(0,0,0,.15);
+}
+.focus-btn-reset{
+  flex:1;background:rgba(255,255,255,.12);color:#fff;
+  box-shadow:0 4px 0 0 rgba(0,0,0,.08);
+}
+.focus-exit{
+  width:100%;padding:9px;font-size:12px;
+  background:rgba(255,255,255,.08);color:rgba(255,255,255,.65);
+  border:none;border-radius:12px;cursor:pointer;
+  font-family:inherit;transition:opacity .2s;
+}
+.focus-exit:hover{opacity:.85}
+.focus-skip{
+  position:absolute;top:4px;right:4px;
+  background:none;border:none;color:rgba(255,255,255,.3);
+  font-size:18px;cursor:pointer;padding:4px 8px;
+  -webkit-app-region:no-drag;
+}
+</style>
+</head>
+<body>
+<div class="focus-card" style="position:relative">
+  <button class="focus-skip" id="exitBtn2" title="退出">✕</button>
+  <div class="focus-title">
+    <span id="statusLabel" style="opacity:.85">准备开始</span>
+    <div style="display:flex;gap:6px;align-items:center">
+      <span id="modeBadge" style="font-size:11px;padding:2px 10px;background:rgba(255,255,255,.15);border-radius:999px;cursor:pointer">倒计时</span>
+      <button id="completeTaskBtn" style="display:none;padding:4px 10px;font-size:11px;background:rgba(255,255,255,.2);border:none;border-radius:8px;color:#fff;cursor:pointer">✅ 完成任务</button>
+    </div>
+  </div>
+  <div class="focus-time" id="timerDisplay">25:00</div>
+  <div class="focus-timeline" id="timeline"></div>
+  <div class="focus-row">
+    <select class="focus-select" id="catSelect"></select>
+    <select class="focus-select" id="taskSelect"></select>
+  </div>
+  <div class="focus-btns">
+    <button class="focus-btn focus-btn-start" id="startBtn">▶ 开始</button>
+    <button class="focus-btn focus-btn-pause" id="pauseBtn" style="display:none">⏸ 暂停</button>
+    <button class="focus-btn focus-btn-finish" id="finishBtn" style="display:none">✅ 完成专注</button>
+    <button class="focus-btn focus-btn-reset" id="resetBtn">↺</button>
+  </div>
+  <button class="focus-exit" id="exitBtn">退出专注模式</button>
+</div>
+
+<script>
+// ── 倒计时核心（纯反映主窗口状态 + 本地时钟平滑插值） ──────────────────
+const FOCUS_TOTAL = 25 * 60;
+let phase      = 'idle';   // idle | focus | overtime | break
+let running    = false;
+let countUp    = false;
+let startTime  = 0;        // Date.now() — 本地时钟，每次 sync 重置
+let baseRemain = FOCUS_TOTAL; // 上次 sync 时的剩余秒数（所有 phase 通用）
+let ticker     = null;
+
+let tasks = [];
+let tags  = [];
+let activeTaskId = null;
+let activeCat    = '';
+
+const POMO_PHASES = [
+  {key:'r', label:'回顾', color:'#818cf8', pct:.08},
+  {key:'w', label:'工作', color:'#6366f1', pct:.42},
+  {key:'w', label:'工作', color:'#6366f1', pct:.42},
+  {key:'t', label:'记录', color:'#a855f7', pct:.08},
+];
+
+function fmtTime(sec) {
+  const s = Math.max(0, Math.floor(sec));
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  return String(m).padStart(2,'0') + ':' + String(rs).padStart(2,'0');
+}
+
+// computeTime: 统一使用 baseRemain ± 本地流逝时间
+// - 所有 phase 的 running/paused 计算都基于 baseRemain，不再区分 overtimeSec/breakSec
+function computeTime() {
+  if (!running) return baseRemain;
+  const elapsed = (Date.now() - startTime) / 1000;
+  // overtime: 正计时  break/focus: 倒计时
+  return phase === 'overtime' ? baseRemain + elapsed : baseRemain - elapsed;
+}
+
+function phaseLabel() {
+  const map = {idle:'准备开始', focus:'专注中', overtime:'加时中', break:'休息中'};
+  return map[phase] || '专注';
+}
+
+function timelineHTML() {
+  const tmpl = POMO_PHASES.map(p => `<div style="flex:${p.pct*100};background:${p.color};border-radius:4px;transition:all .3s" title="${p.label}"></div>`).join('');
+  let pos = 0;
+  if (phase === 'focus' || phase === 'overtime') {
+    const remain = computeTime();
+    pos = ((FOCUS_TOTAL - Math.max(0, remain)) / FOCUS_TOTAL) * 100;
+    pos = Math.min(100, Math.max(0, pos));
+  }
+  return tmpl + `<div style="position:absolute;inset:0;overflow:hidden;border-radius:8px;pointer-events:none"><div style="position:absolute;left:0;top:0;bottom:0;width:${Math.min(100,pos)}%;background:rgba(255,255,255,.2);border-radius:8px 0 0 8px"></div></div>`;
+}
+
+function render() {
+  const t = computeTime();
+  let disp;
+  if (countUp && (phase==='focus'||phase==='overtime')) {
+    disp = fmtTime(FOCUS_TOTAL - t);
+  } else if (phase === 'overtime') {
+    // 加时显示 +M:SS 与主窗口一致
+    const s = Math.floor(t);
+    disp = '+' + String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
+  } else {
+    disp = fmtTime(t);
+  }
+  const el = document.getElementById('timerDisplay');
+  el.textContent = disp;
+  el.className = 'focus-time' +
+    (phase==='overtime'?' overtime':'') +
+    (phase==='break'?' break':'');
+
+  document.getElementById('statusLabel').textContent = phaseLabel();
+  document.getElementById('modeBadge').textContent = countUp ? '正计时' : '倒计时';
+  document.getElementById('timeline').innerHTML =
+    '<div style="position:relative;width:100%;height:100%;display:flex;gap:2px">' + timelineHTML() + '</div>';
+
+  // 按钮
+  const idle = phase==='idle' || (phase==='focus' && !running);
+  const isRunning = running && phase!=='overtime';
+  const ot = phase==='overtime';
+  document.getElementById('startBtn').style.display = (idle && !ot) ? '' : 'none';
+  document.getElementById('pauseBtn').style.display = isRunning ? '' : 'none';
+  document.getElementById('finishBtn').style.display = ot ? '' : 'none';
+  document.getElementById('completeTaskBtn').style.display = activeTaskId ? '' : 'none';
+
+  // ⚠️ 不再做本地 phase 转换 — 所有转换由主窗口驱动，避免竞态
+}
+
+function stopTicker() { if (ticker) { clearInterval(ticker); ticker = null; } }
+// ticker 用 250ms 刷新，比主窗口的 500ms 快，确保本地插值平滑
+function startTicker() { stopTicker(); ticker = setInterval(render, 250); }
+
+function sendAction(type, payload) {
+  window.focusAPI.sendFocusAction({ type, payload, ts: Date.now() });
+}
+
+// ── 初始化 & 状态同步 ──────────────────────────────────────────────────────
+window.focusAPI.onFocusInit(function(state) {
+  applyState(state, false);
+});
+
+window.focusAPI.onFocusStateUpdate(function(state) {
+  applyState(state, true);
+});
+
+function applyState(state, isSync) {
+  console.log(isSync ? 'focus:state-sync' : 'focus:state-init', state);
+
+  const prevRunning = running;
+
+  tasks = state.tasks || [];
+  tags  = state.tags || [];
+  phase = state.phase || 'idle';
+  running = state.running || false;
+  countUp = state.countUp || false;
+  baseRemain = state.remaining != null ? state.remaining : FOCUS_TOTAL;
+  activeTaskId = state.activeTaskId || null;
+  activeCat = state.activeCategory || '';
+
+  // 只用本地时钟：baseRemain 是 sync 时刻的剩余值，从此刻起用本地时间插值
+  if (running) startTime = Date.now();
+
+  // 只在首次初始化时重建下拉，sync 时跳过（避免每 500ms 闪烁）
+  if (!isSync) populateSelects();
+
+  // ticker 管理：只在 running 状态变化时切换
+  if (running && !prevRunning) startTicker();
+  else if (!running && prevRunning) stopTicker();
+
+  render();
+}
+
+function populateSelects() {
+  const catS = document.getElementById('catSelect');
+  catS.innerHTML = '<option value="">选择分类</option>' +
+    tags.map(t => `<option value="${t}" ${t===activeCat?'selected':''}>${t}</option>`).join('');
+  catS.onchange = function() {
+    activeCat = this.value;
+    sendAction('select-category', { category: activeCat });
+  };
+
+  const taskS = document.getElementById('taskSelect');
+  taskS.innerHTML = '<option value="">选择任务</option>' +
+    tasks.filter(t => !t.done).map(t =>
+      `<option value="${t.id}" ${t.id===activeTaskId?'selected':''}>${t.title}</option>`
+    ).join('');
+  taskS.onchange = function() {
+    activeTaskId = this.value || null;
+    sendAction('select-task', { taskId: activeTaskId });
+    document.getElementById('completeTaskBtn').style.display = activeTaskId ? '' : 'none';
+  };
+}
+
+// ── 按钮事件 ───────────────────────────────────────────────────────────────
+document.getElementById('startBtn').onclick = function() {
+  if (phase === 'idle') {
+    phase = 'focus'; running = true; baseRemain = FOCUS_TOTAL;
+    startTime = Date.now();
+    sendAction('start');
+  } else if (phase === 'focus' && !running) {
+    running = true;
+    startTime = Date.now();
+    sendAction('resume');
+  } else if (phase === 'break') {
+    running = true;
+    startTime = Date.now();
+    sendAction('resume-break');
+  }
+  startTicker();
+  render();
+};
+
+document.getElementById('pauseBtn').onclick = function() {
+  // 先计算此刻的准确值（running 仍为 true，computeTime 走实时路径）
+  baseRemain = computeTime();
+  running = false;
+  stopTicker();
+  sendAction('pause');
+  render();
+};
+
+document.getElementById('finishBtn').onclick = function() {
+  const finalOT = Math.floor(computeTime());
+  running = false; stopTicker();
+  sendAction('finish', { overtimeSec: finalOT });
+  phase = 'idle'; baseRemain = FOCUS_TOTAL;
+  render();
+};
+
+document.getElementById('resetBtn').onclick = function() {
+  running = false; stopTicker();
+  phase = 'idle'; baseRemain = FOCUS_TOTAL;
+  sendAction('reset');
+  render();
+};
+
+document.getElementById('exitBtn').onclick = function() {
+  stopTicker();
+  sendAction('exit');
+};
+document.getElementById('exitBtn2').onclick = function() {
+  stopTicker();
+  sendAction('exit');
+};
+
+document.getElementById('modeBadge').onclick = function() {
+  countUp = !countUp;
+  sendAction('toggle-mode', { countUp: countUp });
+  render();
+};
+
+document.getElementById('completeTaskBtn').onclick = function() {
+  sendAction('complete-task', { taskId: activeTaskId });
+};
+</script>
+</body>
+</html>
