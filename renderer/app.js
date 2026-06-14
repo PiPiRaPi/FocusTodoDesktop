@@ -598,12 +598,13 @@ function pomoStart() {
 }
 function pomoPause() {
   if(!pomoRunning&&pomoState!=='overtime')return;
+  // ⚠️ 先计算再设状态：pomoComputeRemaining() 在 pomoRunning=true 时走时间戳动态插值
+  const remain = pomoComputeRemaining();
   pomoRunning=false;
   clearPhaseTimeout();
-  // 保存当前的剩余时间（时间戳方式：精确计算当前剩余）
-  if(pomoState==='focus') pomoRemaining = Math.max(0, pomoComputeRemaining());
-  if(pomoState==='break') pomoBreak = Math.max(0, pomoComputeRemaining());
-  if(pomoState==='overtime') pomoOT = Math.max(0, pomoComputeRemaining());
+  if(pomoState==='focus') pomoRemaining = Math.max(0, remain);
+  if(pomoState==='break') pomoBreak = Math.max(0, remain);
+  if(pomoState==='overtime') pomoOT = Math.max(0, remain);
   if(pomoTimer)clearInterval(pomoTimer); pomoTimer=null;
   exitFocusMode(); renderPomo();
 }
@@ -642,26 +643,32 @@ function bindPomoEvents() {
       case 'start': pomoStart(); break;
       case 'resume': pomoStart(); break;
       case 'resume-break': pomoStart(); break;
-      case 'pause':
+      case 'pause': {
+        const remain = pomoComputeRemaining();
         pomoRunning = false;
-        if (pomoState === 'focus') pomoRemaining = Math.max(0, pomoComputeRemaining());
-        if (pomoState === 'break') pomoBreak = Math.max(0, pomoComputeRemaining());
-        if (pomoState === 'overtime') pomoOT = Math.max(0, pomoComputeRemaining());
+        if (pomoState === 'focus') pomoRemaining = Math.max(0, remain);
+        if (pomoState === 'break') pomoBreak = Math.max(0, remain);
+        if (pomoState === 'overtime') pomoOT = Math.max(0, remain);
         if(pomoTimer) clearInterval(pomoTimer); pomoTimer = null;
+        clearPhaseTimeout();
         renderPomo();
         break;
+      }
       case 'finish':
         pomoFinish(action.payload ? action.payload.overtimeSec : void 0);
         break;
       case 'reset': pomoReset(); break;
-      case 'exit':
+      case 'exit': {
+        const exitRemain = pomoComputeRemaining();
         pomoRunning = false;
-        if(pomoState === 'focus') pomoRemaining = Math.max(0, pomoComputeRemaining());
-        if(pomoState === 'break') pomoBreak = Math.max(0, pomoComputeRemaining());
-        if(pomoState === 'overtime') pomoOT = Math.max(0, pomoComputeRemaining());
+        if(pomoState === 'focus') pomoRemaining = Math.max(0, exitRemain);
+        if(pomoState === 'break') pomoBreak = Math.max(0, exitRemain);
+        if(pomoState === 'overtime') pomoOT = Math.max(0, exitRemain);
         if(pomoTimer) clearInterval(pomoTimer); pomoTimer = null;
+        clearPhaseTimeout();
         exitFocusMode();
         break;
+      }
       case 'enter-overtime': pomoEnterOvertime(); break;
       case 'break-finished': break; // handled by setInterval
       case 'select-category': pomoCategory = action.payload.category; renderPomo(); break;
